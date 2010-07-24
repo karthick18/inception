@@ -56,16 +56,7 @@
 #define DREAM_ROLE_MASK 0x7f
 #define DREAMERS (0x7)
 
-#define output(fmt, arg...) do { fprintf(stderr, fmt, ##arg); } while(0)
-
-struct inception_definitions
-{
-    const char *term;
-    const char *definition;
-} inception_definitions[] = {
-    {.term= "limbo",  .definition = "State of infinite subconsciousness" },
-    {.term = "totem", .definition = "Object to determine if one is in a dream world or reality" },
-};
+#define output(fmt, arg...) do { fprintf(stderr, fmt, ##arg); fflush(stderr); } while(0)
 
 #define DREAM_LEVELS (0x3 + 1 ) /* + 1 as an illustrative considering the 4th is really a limbo from 3rd */
 
@@ -109,11 +100,19 @@ static pthread_mutex_t inception_reality_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t inception_reality_wakeup_for_all = PTHREAD_COND_INITIALIZER;
 static struct list_head dreamer_queue[DREAM_LEVELS];
 static pthread_mutex_t dreamer_mutex[DREAM_LEVELS];
+static pthread_mutex_t limbo_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t limbo_cond = PTHREAD_COND_INITIALIZER;
+
+#define _INCEPTION_C_
 #include "inception.h"
 
 static char *fischers_mind_state;
 static struct dreamer_attr *fischer_level1;
 static pid_t fischer_level1_taskid; /*fischers level1 taskid*/
+static int dream_delay_map[DREAM_LEVELS] = { 1, 2, 4, 8};
+static int dreamers_in_reality;
+
+static void fischer_dream_level1(void) __attribute__((unused));
 /*
  * Queue the command to the dreamers request queue
  */
@@ -236,11 +235,13 @@ static void set_thread_priority(struct dreamer_attr *dattr, int level)
 }
 
 /*
- * Level 0 is wake up dreamers on all levels
+ * Level 0 is wake up dreamers on all levels.
+ * Skip guys in a limbo from that level to all the way down.
  */
 static void wake_up_dreamers(int level)
 {
     int start = DREAM_LEVELS-1,end = 0;
+    int role_in_limbo = 0;
     register int i;
     if(level > 0)
     {
@@ -254,9 +255,18 @@ static void wake_up_dreamers(int level)
         for(iter = dreamer_queue[i].head; iter; iter = iter->next)
         {
             struct dreamer_attr *dattr = LIST_ENTRY(iter, struct dreamer_attr, list);
-            dream_enqueue_cmd(dattr, DREAMER_KICK_BACK, NULL, dattr->level);
+            if( (dattr->shared_state & DREAMER_IN_LIMBO) )
+            {
+                role_in_limbo |= dattr->role;
+            }
+
+            if( !(dattr->role & role_in_limbo) )
+                dream_enqueue_cmd(dattr, DREAMER_KICK_BACK, NULL, dattr->level);
+            else if(!(dattr->shared_state & DREAMER_IN_LIMBO))
+                dattr->shared_state |= DREAMER_IN_LIMBO;
         }
         pthread_mutex_unlock(&dreamer_mutex[i]);
+        usleep(10000); /* breather to the dreamers in the level woken up */
     }
 }
 
@@ -266,7 +276,6 @@ static void wake_up_dreamers(int level)
 static void wait_for_kick(struct dreamer_attr *dattr)
 {
     struct dreamer_request *req = NULL;
-    int sleep_time = dattr->level * 2;
     for(;;)
     {
         struct timespec ts = {0};
@@ -290,7 +299,7 @@ static void wait_for_kick(struct dreamer_attr *dattr)
             free(req);
         }
         assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-        ts.tv_sec += sleep_time;
+        ts.tv_sec += dream_delay_map[dattr->level-1];
         pthread_cond_timedwait(dattr->cond[dattr->level-1], &dreamer_mutex[dattr->level-1], &ts);
     }
     out:
@@ -322,13 +331,57 @@ static __inline__ void dream_level_create(int level, void * (*dream_function) (v
 }
 
 /*
+ * Now this is the state where Cobb. meets Saito.
+ * The beauty of the Films ending is: Did Cobb take a kick back to reality on seeing Saito remind him
+ * that he has been in a limbo with his wife and has to come back to become Young.
+ * And does Saito take the kick back when Cobb. pulls the trigger on him implicitly in limbo to give him the kick back.
+ * Either way based on whether Cobb. got the kick back from limbo or not, the end is a reality or limbo.
+ * Thats the ingenuity of Inception. So I think its better if we don't mess this up for ourselves and
+ * just sleep here till infinity!
+ */
+
+static void infinite_subconsciousness(struct dreamer_attr *dattr)
+{
+    struct timespec ts = {0};
+    static int dreamers;
+
+    pthread_mutex_lock(&limbo_mutex);
+    ++dreamers;
+    while(dreamers != 2) 
+    {
+        assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+        ts.tv_sec += 2;
+        pthread_cond_timedwait(&limbo_cond, &limbo_mutex, &ts);
+    }
+    /*
+     * Wait for the signal from Fischer
+     */
+    while(!dreamers_in_reality)
+    {
+        assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+        ts.tv_sec += 1;
+        pthread_cond_timedwait(&limbo_cond, &limbo_mutex, &ts);
+    }
+
+    if((dattr->role & DREAM_INCEPTION_PERFORMER))
+    {
+        output("\n\nCobbs. search for Saito ends in Limbo. Now either both take the kick back to reality "
+               "or the ending is still a state of limbo from Cobbs. perspective. which is what Nolan wants us to think\n");
+        output("So let me end the limbo state abruptly and leave it to the reviewers to decide with an infinite sleep:-)\n\n");
+    }
+    pthread_cond_signal(&limbo_cond);
+    pthread_mutex_unlock(&limbo_mutex);
+    sleep(1<<31);
+}
+
+/*
  * TODO next: Limbo is a state of infinite subconciousness
  */
 static void enter_limbo(struct dreamer_attr *dattr)
 {
     struct dreamer_attr *clone = NULL;
     struct dreamer_request *req = NULL;
-#if 1 /* let it spin in limbo until the last phase below is complete */
+#if 0 /* let it spin in limbo until the last phase below is complete */
     for(;;) sleep(10); 
 #endif
     dattr->shared_state |= DREAMER_IN_LIMBO;
@@ -347,28 +400,215 @@ static void enter_limbo(struct dreamer_attr *dattr)
     {
     case DREAM_INCEPTION_PERFORMER: /* Cobb */
         {
-
+            struct timespec ts;
+            struct dreamer_attr *ariadne = NULL;
+            int inception_done = 0;
+            int search_for_saito = 0;
+            ariadne = dreamer_find(&dreamer_queue[3], "ariadne", DREAM_WORLD_ARCHITECT);
+            /*
+             * Self enqueue Mal and her thoughts into the dream
+             */
+            dream_enqueue_cmd(clone, DREAMER_IN_MY_DREAM, (void*)"Cobb takes Elevator to meet Mal", clone->level);
+            dream_enqueue_cmd(clone, DREAMER_IN_MY_DREAM, 
+                              (void*)"[Cobb] tells [Mal] about his inception on her to think that the WORLD is unreal", 
+                              clone->level);
+            dream_enqueue_cmd(clone, DREAMER_IN_MY_DREAM,
+                              (void*)"[Mal] wants [Cobb] to go back with him into the world they built in their dreams",
+                              clone->level);
+            for(;;)
+            {
+                while( (req = dream_dequeue_cmd(clone)) )
+                {
+                    /*
+                     * Meets Mal
+                     */
+                    if(req->cmd == DREAMER_IN_MY_DREAM)
+                    {
+                        output("%s in level [%d] while in limbo\n", (const char*)req->arg, clone->level);
+                    }
+                    /*
+                     * Mal killed
+                     */
+                    else if(req->cmd == DREAMER_KILLED)
+                    {
+                        output("[%s] finds %s in level [%d] while in limbo\n", 
+                               clone->name, (const char*)req->arg, clone->level);
+                    }
+                    /*
+                     * Recover to search for Saito. Here mark the inception
+                     */
+                    else if(req->cmd == DREAMER_RECOVER)
+                    {
+                        struct dreamer_attr *source = (struct dreamer_attr*)req->arg;
+                        /*
+                         * If the recovery trigger is from ariadne
+                         */
+                        if( (source->role & DREAM_WORLD_ARCHITECT) )
+                        {
+                            if(!inception_done)
+                            {
+                                search_for_saito = 1;
+                            }
+                            else
+                            {
+                                search_saito:
+                                pthread_mutex_unlock(&dreamer_mutex[3]);
+                                usleep(10000);
+                                infinite_subconsciousness(clone);
+                                pthread_mutex_lock(&dreamer_mutex[3]);
+                                output("[%s] returned after searching for Saito in limbo at level [%d]\n",
+                                       clone->name, clone->level);
+                                assert(0); /* should not return back here*/
+                            }
+                        }
+                        /*
+                         * Indicator from Fischer for the final shot.
+                         */
+                        else if( (source->role & DREAM_INCEPTION_TARGET) )
+                        {
+                            inception_done = 1;
+                            memcpy(fischers_mind_state, inception_thoughts, sizeof(inception_thoughts));
+                            /*
+                             * Send recovery indicator to Ariadne
+                             */
+                            dream_enqueue_cmd(ariadne, DREAMER_RECOVER, clone, ariadne->level);
+                            if(search_for_saito)
+                            {
+                                goto search_saito;
+                            }
+                        }
+                    }
+                }
+                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+                ts.tv_sec += dream_delay_map[clone->level-1];
+                pthread_cond_timedwait(clone->cond[3], &dreamer_mutex[3], &ts);
+            }
         }
         break;
 
     case DREAM_WORLD_ARCHITECT: /* Ariadne */
         {
-
+            struct dreamer_attr *cobb = NULL;
+            struct dreamer_attr *fischer = NULL;
+            struct timespec ts = {0};
+            cobb = dreamer_find(&dreamer_queue[3], "cobb", DREAM_INCEPTION_PERFORMER);
+            fischer = dreamer_find(&dreamer_queue[3], "fischer", DREAM_INCEPTION_TARGET);
+            /*  
+             * Self enqueue to follow Cobb. in the Elevator to his wife.
+             */
+            dream_enqueue_cmd(clone, DREAMER_IN_MY_DREAM, cobb, clone->level);
+            for(;;)
+            {
+                while ( (req = dream_dequeue_cmd(clone) ) )
+                {
+                    if(req->cmd == DREAMER_IN_MY_DREAM)
+                    {
+                        output("[%s] follows [%s] in Elevator to level [%d] in Limbo to meet his wife\n",
+                               clone->name, cobb->name, clone->level);
+                        pthread_mutex_unlock(&dreamer_mutex[3]);
+                        /*
+                         * Take a breather while Cobb. interacts with his and tells her about his inception.
+                         */
+                        sleep(dream_delay_map[clone->level-1]);
+                        pthread_mutex_lock(&dreamer_mutex[3]);
+                        dream_enqueue_cmd(cobb, DREAMER_KILLED, (void*)"[Mal] killed", cobb->level);
+                        pthread_mutex_unlock(&dreamer_mutex[3]);
+                        /*
+                         * Quick breather
+                         */
+                        usleep(10000);
+                        pthread_mutex_lock(&dreamer_mutex[3]);
+                        /*
+                         * Now send Fischer a kick back from limbo down to reconcile.
+                         */
+                        dream_enqueue_cmd(fischer, DREAMER_KICK_BACK, clone, fischer->level);
+                        /*
+                         * Now tell Cobb. to recover and go and search Saito as he is the only one who can
+                         * search her in limbo.
+                         */
+                        dream_enqueue_cmd(cobb, DREAMER_RECOVER, clone, cobb->level);
+                    }
+                    else if(req->cmd == DREAMER_RECOVER)
+                    {
+                        /*
+                         * Indication for us to take the kick back.
+                         */
+                        dream_enqueue_cmd(clone, DREAMER_KICK_BACK, clone, clone->level);
+                    }
+                    else if(req->cmd == DREAMER_KICK_BACK)
+                    {
+                        struct dreamer_attr *self = NULL; /*ourself in lower level*/
+                        /*
+                         * Return back
+                         */
+                        dattr->shared_state &= ~DREAMER_IN_LIMBO;
+                        clone->shared_state &= ~DREAMER_IN_LIMBO;
+                        pthread_mutex_unlock(&dreamer_mutex[3]);
+                        free(req);
+                        usleep(10000);
+                        self = dreamer_find_sync(clone, clone->level-1, "ariadne", DREAM_WORLD_ARCHITECT);
+                        dream_enqueue_cmd(self, DREAMER_KICK_BACK, clone, self->level);
+                        output("[%s] taking the kick back from limbo at level [%d] to level [%d]\n",
+                               clone->name, clone->level, clone->level-1);
+                        goto out;
+                    }
+                    free(req);
+                }
+                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+                ts.tv_sec += dream_delay_map[clone->level-1];
+                pthread_cond_timedwait(clone->cond[3], &dreamer_mutex[3], &ts);
+            }
         }
         break;
 
     case DREAM_OVERLOOKER: /* Saito */
         {
-
+            pthread_mutex_unlock(&dreamer_mutex[3]);
+            usleep(1000);
+            infinite_subconsciousness(clone);
         }
         break;
 
     case DREAM_INCEPTION_TARGET: /*Fischer*/
         {
-
+            struct dreamer_attr *self = NULL;
+            struct timespec ts = {0};
+            pthread_mutex_unlock(&dreamer_mutex[3]);
+            /*
+             * Find ourselves in the lower level to take the kick back.
+             */
+            self = dreamer_find_sync(clone, clone->level-1, "fischer", DREAM_INCEPTION_TARGET);
+            pthread_mutex_lock(&dreamer_mutex[3]);
+            for(;;)
+            {
+                while ( (req = dream_dequeue_cmd(clone)) )
+                {
+                    if(req->cmd == DREAMER_KICK_BACK)
+                    {
+                        dattr->shared_state &= ~DREAMER_IN_LIMBO;
+                        clone->shared_state &= ~DREAMER_IN_LIMBO;
+                        pthread_mutex_unlock(&dreamer_mutex[3]);
+                        free(req);
+                        pthread_mutex_lock(&dreamer_mutex[clone->level-2]);
+                        dream_enqueue_cmd(self, DREAMER_KICK_BACK, clone, self->level);
+                        pthread_mutex_unlock(&dreamer_mutex[clone->level-2]);
+                        output("[%s] kicking off from limbo at [%d] to level [%d]\n",
+                               clone->name, clone->level, clone->level-1);
+                        goto out;
+                    }
+                    free(req);
+                }
+                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
+                ts.tv_sec += dream_delay_map[clone->level-1];
+                pthread_cond_timedwait(clone->cond[3], &dreamer_mutex[3], &ts);
+            }
         }
         break;
     }
+    pthread_mutex_unlock(&dreamer_mutex[3]);
+
+    out:
+    return ; 
 }
 
 
@@ -488,8 +728,20 @@ static void *dream_level_3(void *arg)
                     {
                         if(!ret_from_limbo)
                         {
-                            output("[%s] returned from Fischers limbo to level [%d]\n", 
+                            struct dreamer_attr *yusuf = NULL;
+                            ret_from_limbo = 1;
+                            output("[%s] returned from Fischers limbo to level [%d] to take the synchronized kick\n", 
                                    dattr->name, dattr->level);
+                            pthread_mutex_unlock(&dreamer_mutex[2]);
+                            pthread_mutex_lock(&dreamer_mutex[0]);
+                            yusuf = dreamer_find_sync_locked(dattr, 1, "yusuf", DREAM_SEDATIVE_CREATOR);
+                            dream_enqueue_cmd(yusuf, DREAMER_SYNCHRONIZE_KICK, dattr, yusuf->level);
+                            pthread_mutex_unlock(&dreamer_mutex[0]);
+                            /*
+                             * Take a breather while Yusuf does his work
+                             */
+                            usleep(10000);
+                            pthread_mutex_lock(&dreamer_mutex[2]);
                         }
                         else
                         {
@@ -502,7 +754,7 @@ static void *dream_level_3(void *arg)
                     free(req);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 6;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -561,7 +813,7 @@ static void *dream_level_3(void *arg)
                     dream_enqueue_cmd(dattr, DREAMER_RECOVER, fischer, dattr->level);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 6;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -594,7 +846,7 @@ static void *dream_level_3(void *arg)
                     free(req);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 6;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -628,8 +880,19 @@ static void *dream_level_3(void *arg)
                             output("[%s] got a kick back from Limbo to reconcile with his father at level [%d]\n",
                                    dattr->name, dattr->level);
                             reconciled = 1;
-                            cobb = dreamer_find(&dreamer_queue[2], "cobb", DREAM_INCEPTION_PERFORMER);
+                            pthread_mutex_unlock(&dreamer_mutex[2]);
+                            /*
+                             * Take a breather before intimating Cobb.
+                             */
+                            usleep(10000);
+                            /*
+                             * Indicator to Cobb. for you know what ...
+                             */
+                            cobb = dreamer_find_sync(dattr, dattr->level+1, "cobb", DREAM_INCEPTION_PERFORMER);
+                            pthread_mutex_lock(&dreamer_mutex[dattr->level]);
                             dream_enqueue_cmd(cobb, DREAMER_RECOVER, dattr, cobb->level);
+                            pthread_mutex_unlock(&dreamer_mutex[dattr->level]);
+                            pthread_mutex_lock(&dreamer_mutex[2]);
                         }
                         else 
                         {
@@ -642,7 +905,7 @@ static void *dream_level_3(void *arg)
                     free(req);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 6;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -764,7 +1027,7 @@ static void *dream_level_2(void *arg)
                     free(req);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 4;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
             }
         }
@@ -795,7 +1058,7 @@ static void *dream_level_2(void *arg)
                     output("[%s] waiting for Ariadne to join in level [%d]\n",
                            dattr->name, dattr->level);
                     assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                    ts.tv_sec += 4;
+                    ts.tv_sec += dream_delay_map[dattr->level-1];
                     pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
                 }
                 else break;
@@ -840,7 +1103,7 @@ static void *dream_level_2(void *arg)
                     free(req);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 4;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
             }
         }
@@ -883,7 +1146,7 @@ static void *dream_level_2(void *arg)
                     free(req);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 4;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
             }
             
@@ -981,17 +1244,20 @@ static void continue_dreaming_in_level_1(struct dreamer_attr *dattr)
         output("[%s] while falling into the bridge trigger Arthurs fall in level [%d]\n", dattr->name, dattr->level);
         dream_enqueue_cmd(arthur, DREAMER_FALL, dattr, dattr->level);
         assert(clock_gettime(CLOCK_REALTIME, &ts) ==0);
-        ts.tv_sec += 2;
+        ts.tv_sec += dream_delay_map[dattr->level-1];
         pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
     }
 
     out_unlock:
+    dattr->shared_state |= DREAMER_KICK_BACK;
     pthread_mutex_unlock(&dreamer_mutex[0]);
     wake_up_dreamers(0); /* wake up all */
 }
 
 /*
  * This is the level 1 of Fischer's request processing loop
+ * from which he is expected to return back to his OWN individualistic state
+ * assuming the INCEPTION was a SUCCESS !
  */
 static void fischer_dream_level1(void)
 {
@@ -1007,7 +1273,7 @@ static void fischer_dream_level1(void)
         {
             if(req->cmd == DREAMER_NEXT_LEVEL) /* request to enter next level from Cobb.*/
             {
-                output("[%s] following Cobb. to Level [%d] to meet my father\n", 
+                output("[%s] following Cobb. to Level [%d] to meet his father\n", 
                        dattr->name, dattr->level+1);
                 dream_level_create(dattr->level+1, dream_level_2, dattr);
             }
@@ -1026,11 +1292,58 @@ static void fischer_dream_level1(void)
             free(req);
         }
         assert(clock_gettime(CLOCK_REALTIME, &ts)==0);
-        ts.tv_sec += 2;
+        ts.tv_sec += dream_delay_map[dattr->level-1];
         pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
     }
     out:
-    pthread_mutex_unlock(&dreamer_mutex[0]);
+    dattr->shared_state |= DREAMER_KICK_BACK;
+    /*
+     * Check if the dreamers in level 0 are back
+     */
+    for(;;)
+    {
+        register struct list *iter;
+        reality_kick_check:
+        pthread_mutex_unlock(&dreamer_mutex[0]);
+        sleep(2);
+#if 0
+        output("[%s] doing a reality check on level [%d] dreamers\n",
+               dattr->name, dattr->level);
+#endif
+        pthread_mutex_lock(&dreamer_mutex[0]);
+        for(iter = dreamer_queue[0].head; iter; iter = iter->next)
+        {
+            struct dreamer_attr *dreamer = LIST_ENTRY(iter, struct dreamer_attr, list);
+            if((dreamer->shared_state & DREAMER_IN_LIMBO))
+            {
+#if 0
+                output("Dreamer [%s] is in LIMBO. So ignoring\n", dreamer->name);
+#endif
+                continue;
+            }
+            if(!(dreamer->shared_state & DREAMER_KICK_BACK))
+            {
+#if 0
+                output("Dreamer [%s] is not yet in reality\n", dreamer->name);
+#endif
+                goto reality_kick_check;
+            }
+        }
+        pthread_mutex_unlock(&dreamer_mutex[0]);
+        break;
+    }
+
+    pthread_mutex_lock(&limbo_mutex);
+    dreamers_in_reality = 1;
+    pthread_cond_signal(&limbo_cond);
+    pthread_cond_wait(&limbo_cond, &limbo_mutex);
+    pthread_mutex_unlock(&limbo_mutex);
+
+    output("\n\n[%s] exiting back to reality from level [%d] with the THOUGHT:\n\n", dattr->name, dattr->level);
+    pthread_cond_broadcast(&inception_reality_wakeup_for_all);
+    /* 
+     * This should just exit the INCEPTION PROCESS
+     */
 }
 
 
@@ -1098,7 +1411,8 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
     }
     assert(req->cmd == DREAMER_DEFENSE_PROJECTIONS);
     free(req);
-    output("[%s] sees Fischers defense projections at work in his dream\n", dattr->name);
+    output("[%s] sees Fischers defense projections at work in the dream at level [%d]\n", 
+           dattr->name, dattr->level);
     /*
      * Now get into the second level. 
      */
@@ -1162,7 +1476,7 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
                     dream_enqueue_cmd(self, DREAMER_FIGHT, dattr, self->level);
                 }
                 assert(clock_gettime(CLOCK_REALTIME, &ts)==0);
-                ts.tv_sec += 2;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
             }
             
@@ -1199,7 +1513,7 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
                  */
                 dream_enqueue_cmd(fischer_level1, DREAMER_FAKE_SHAPE, dattr, 1);
                 assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += 2;
+                ts.tv_sec += dream_delay_map[dattr->level-1];
                 pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
             }
         }
@@ -1230,6 +1544,7 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
      */
     wait_for_kick(dattr);
     out_unlock:
+    dattr->shared_state |= DREAMER_KICK_BACK; /*mark that we have been woken up*/
     pthread_mutex_unlock(&dreamer_mutex[0]);
 }
 
@@ -1325,7 +1640,6 @@ static void shared_dream_level_1(void *dreamer_attr)
     default:
         break;
     }
-    pthread_cond_broadcast(&inception_reality_wakeup_for_all);
 }
 
 static void *dreamer(void *attr)
@@ -1399,29 +1713,6 @@ static void *inception(void *unused)
 
 int main()
 {
-#if 0
-    asm(".section .text\n"
-        ".align 8\n"
-        ".byte 0xe9\n" /* fool linker to enable relative addressing */
-        ".long 0x1e\n"   /* relative JMP call to 0x1e or call instruction below */
-#ifdef __i386__
-        "popl %ecx\n"
-#else
-        "popq %rcx\n"
-#endif
-        "mov $"STR(__NR_write)",%eax\n" 
-        "movl $1, %ebx\n"\
-        "movl $55, %edx\n"
-        "int $0x80\n"
-        "movl $"STR(__NR_exit)",%eax\n"
-        "movl $0, %ebx\n"
-        "int $0x80\n"
-        ".byte 0xe8\n"
-        ".long -0x23\n"/*"call -0x23\n"*/
-        ".string \"Reconcile with my father and have my own individuality\\n\"");
-        
-#endif
-#if 1
     pthread_t movie;
     register int i;
     /*
@@ -1434,7 +1725,6 @@ int main()
     }
     assert(pthread_create(&movie, NULL, inception, NULL) == 0);
     pthread_join(movie, NULL);
-#endif
     return 0;
 }
     

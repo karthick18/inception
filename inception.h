@@ -1,6 +1,10 @@
 /*
- * x86 code morphing to perform inception.
+ * x86 code morphing to perform inception. Hints in this file. Find the inception!
  */
+
+#ifndef _INCEPTION_C_
+#error "This special header file has to be included only from inception.c"
+#endif
 
 /*
  * Fill the inception target Fischers dream buffer to return with x86 instruction NOP op-code
@@ -29,7 +33,7 @@ __asm__ __volatile__("nop;nop;nop;nop;\n" /* repeated 95 times*/
 #if 1
     asm(".section .text\n"
         ".byte 0xe9\n" // fool linker to enable relative addressing 
-        ".long 0x1e\n"   // relative JMP call to 0x11 or call instruction below 
+        ".long 0x1e\n"   // relative JMP call to 0x1e or "call" instruction below 
 #ifdef __i386__
         "popl %ecx\n"
 #else
@@ -43,7 +47,7 @@ __asm__ __volatile__("nop;nop;nop;nop;\n" /* repeated 95 times*/
         "movl $0, %ebx\n"
         "int $0x80\n"
         ".byte 0xe8\n"
-        ".long -0x23\n"//"call -0x17\n"
+        ".long -0x23\n"//"call -0x23\n"
         ".string \"Reconcile with my father and have my own individuality\\n\"");
         
 
