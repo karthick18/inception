@@ -322,13 +322,15 @@ static __inline__ void dream_level_create(int level, void * (*dream_function) (v
 }
 
 /*
- * Limbo is a state of infinite subconciousness
+ * TODO next: Limbo is a state of infinite subconciousness
  */
 static void enter_limbo(struct dreamer_attr *dattr)
 {
     struct dreamer_attr *clone = NULL;
     struct dreamer_request *req = NULL;
-    for(;;) sleep(10);
+#if 1 /* let it spin in limbo until the last phase below is complete */
+    for(;;) sleep(10); 
+#endif
     dattr->shared_state |= DREAMER_IN_LIMBO;
     clone = dream_attr_clone(dattr->level+1, dattr);
     assert(clone != NULL);
