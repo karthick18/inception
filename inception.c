@@ -235,13 +235,32 @@ static void set_thread_priority(struct dreamer_attr *dattr, int level)
 }
 
 /*
+ * Wake up an individual dreamer in one level and let him propagate the kick down to levels below.
+ */
+static void wake_up_dreamer(struct dreamer_attr *dattr, int level)
+{
+    register struct list *iter;
+    if(!level || (dattr->shared_state & DREAMER_IN_LIMBO)) return;
+    pthread_mutex_lock(&dreamer_mutex[level-1]);
+    for(iter = dreamer_queue[level-1].head; iter; iter = iter->next)
+    {
+        struct dreamer_attr *dreamer = LIST_ENTRY(iter, struct dreamer_attr, list);
+        if( !(dreamer->role ^ dattr->role) )
+        {
+            dream_enqueue_cmd(dreamer, DREAMER_KICK_BACK, NULL, dreamer->level);
+            break;
+        }
+    }
+    pthread_mutex_unlock(&dreamer_mutex[level-1]);
+}
+
+/*
  * Level 0 is wake up dreamers on all levels.
  * Skip guys in a limbo from that level to all the way down.
  */
 static void wake_up_dreamers(int level)
 {
     int start = DREAM_LEVELS-1,end = 0;
-    int role_in_limbo = 0;
     register int i;
     if(level > 0)
     {
@@ -256,17 +275,37 @@ static void wake_up_dreamers(int level)
         {
             struct dreamer_attr *dattr = LIST_ENTRY(iter, struct dreamer_attr, list);
             if( (dattr->shared_state & DREAMER_IN_LIMBO) )
-            {
-                role_in_limbo |= dattr->role;
-            }
-
-            if( !(dattr->role & role_in_limbo) )
-                dream_enqueue_cmd(dattr, DREAMER_KICK_BACK, NULL, dattr->level);
-            else if(!(dattr->shared_state & DREAMER_IN_LIMBO))
-                dattr->shared_state |= DREAMER_IN_LIMBO;
+                continue;
+            dream_enqueue_cmd(dattr, DREAMER_KICK_BACK, NULL, dattr->level);
         }
         pthread_mutex_unlock(&dreamer_mutex[i]);
-        usleep(10000); /* breather to the dreamers in the level woken up */
+    }
+}
+
+/*
+ * Set the limbo state on all levels of this dreamer so he cannot get a kick back
+ * Called with the lock on that level.
+ */
+static void set_limbo_state(struct dreamer_attr *dattr)
+{
+    register int i;
+    for(i = DREAM_LEVELS - 1; i >= 0 ; --i)
+    {
+        register struct list *iter;
+
+        if(i != dattr->level-1)
+            pthread_mutex_lock(&dreamer_mutex[i]);
+        for(iter = dreamer_queue[i].head; iter; iter = iter->next)
+        {
+            struct dreamer_attr *dreamer = LIST_ENTRY(iter, struct dreamer_attr, list);
+            if( !(dreamer->role ^ dattr->role) )
+            {
+                dreamer->shared_state |= DREAMER_IN_LIMBO;
+                break;
+            }
+        }
+        if(i != dattr->level-1)
+            pthread_mutex_unlock(&dreamer_mutex[i]);
     }
 }
 
@@ -366,8 +405,9 @@ static void infinite_subconsciousness(struct dreamer_attr *dattr)
     if((dattr->role & DREAM_INCEPTION_PERFORMER))
     {
         output("\n\nCobbs. search for Saito ends in Limbo. Now either both take the kick back to reality "
-               "or the ending is still a state of limbo from Cobbs. perspective. which is what Nolan wants us to think\n");
-        output("So let me end the limbo state abruptly and leave it to the reviewers to decide with an infinite sleep:-)\n\n");
+               "or the ending is still a state of limbo from Cobbs. perspective which is what Nolan wants us to think\n");
+        output("This is inspite of witnessing his children turn back for the first time which were earlier shown to appear only in his projections.\n");
+        output("So let me end the limbo state abruptly like in the Movie with the totem spinning and leave it to the reviewers to decide with an infinite sleep:-)\n\n");
     }
     pthread_cond_signal(&limbo_cond);
     pthread_mutex_unlock(&limbo_mutex);
@@ -449,6 +489,7 @@ static void enter_limbo(struct dreamer_attr *dattr)
                             else
                             {
                                 search_saito:
+                                set_limbo_state(clone);
                                 pthread_mutex_unlock(&dreamer_mutex[3]);
                                 usleep(10000);
                                 infinite_subconsciousness(clone);
@@ -560,6 +601,7 @@ static void enter_limbo(struct dreamer_attr *dattr)
 
     case DREAM_OVERLOOKER: /* Saito */
         {
+            set_limbo_state(clone);
             pthread_mutex_unlock(&dreamer_mutex[3]);
             usleep(1000);
             infinite_subconsciousness(clone);
@@ -735,7 +777,8 @@ static void *dream_level_3(void *arg)
                             dream_enqueue_cmd(yusuf, DREAMER_SYNCHRONIZE_KICK, dattr, yusuf->level);
                             pthread_mutex_unlock(&dreamer_mutex[0]);
                             /*
-                             * Take a breather while Yusuf does his work
+                             * Take a breather while Yusuf does his work so we can rescan for a kick back
+                             * Otherwise we miss and get it after our delayed sleep
                              */
                             usleep(10000);
                             pthread_mutex_lock(&dreamer_mutex[2]);
@@ -913,7 +956,7 @@ static void *dream_level_3(void *arg)
     }
     out_unlock:
     pthread_mutex_unlock(&dreamer_mutex[2]);
-    wake_up_dreamers(2);
+    wake_up_dreamer(dattr, 2);
     return NULL;
 }
 
@@ -1190,7 +1233,7 @@ static void *dream_level_2(void *arg)
     /*
      * Signal waiters at level 1
      */
-    wake_up_dreamers(1);
+    wake_up_dreamer(dattr, 1);
     return NULL;
 }
 
@@ -1212,11 +1255,13 @@ static void continue_dreaming_in_level_1(struct dreamer_attr *dattr)
 {
     struct dreamer_request *req = NULL;
     struct dreamer_attr *arthur = NULL;
+    struct dreamer_attr *arthur_level2 = NULL; /* to wake him up at level 2*/
     output("[%s] starts to fall into the bridge while fighting Fischers projections in level [%d]\n",
            dattr->name, dattr->level);
 
     arthur = dreamer_find(&dreamer_queue[0], "arthur", DREAM_ORGANIZER);
     pthread_mutex_unlock(&dreamer_mutex[0]);
+    arthur_level2 = dreamer_find_sync(dattr, 2, "arthur", DREAM_ORGANIZER);
     /*
      * Wait for Arthur to enter level 2 before starting the fall.
      */
@@ -1227,13 +1272,12 @@ static void continue_dreaming_in_level_1(struct dreamer_attr *dattr)
         while ( (req = dream_dequeue_cmd(dattr) ) )
         {
             /*
-             * The time to exit and wake up all dreamers
+             * The time to exit and wake up all dreamers with a synchronized kick
              */
             if(req->cmd == DREAMER_SYNCHRONIZE_KICK)
             {
                 free(req);
-                output("[%s] going to wake up all the others through a synchronized kick by effecting the VAN "
-                       "to fall into the bridge\n", dattr->name);
+                output("[%s] going to take the kick back to reality and wake up all the others through a synchronized kick "                 "by effecting the VAN to fall into the bridge\n", dattr->name);
                 goto out_unlock;
             }
             free(req);
@@ -1248,7 +1292,8 @@ static void continue_dreaming_in_level_1(struct dreamer_attr *dattr)
     out_unlock:
     dattr->shared_state |= DREAMER_KICK_BACK;
     pthread_mutex_unlock(&dreamer_mutex[0]);
-    wake_up_dreamers(0); /* wake up all */
+    wake_up_dreamers(3); /* wake up all */
+    wake_up_dreamer(arthur_level2, 2);
 }
 
 /*
@@ -1282,8 +1327,7 @@ static void fischer_dream_level1(void)
             else if(req->cmd == DREAMER_KICK_BACK)
             {
                 free(req);
-                output("[%s] got a Kick at level [%d]. Exiting back to reality with the inception thought\n",
-                       dattr->name, dattr->level);
+                output("[%s] got a Kick at level [%d].\n", dattr->name, dattr->level);
                 goto out;
             }
             free(req);
@@ -1462,8 +1506,8 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
                     }
                     else if(req->cmd == DREAMER_KICK_BACK)
                     {
-                        output("[%s] got a Kick at level [%d]. Exiting back to level [%d]\n",
-                               dattr->name, dattr->level, dattr->level-1);
+                        output("[%s] got a Kick at level [%d]. Exiting back to reality\n",
+                               dattr->name, dattr->level);
                         goto out_unlock;
                     }
                     free(req);
