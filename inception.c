@@ -56,7 +56,7 @@
 #define DREAM_ROLE_MASK 0x7f
 #define DREAMERS (0x7)
 
-#define output(fmt, arg...) do { fprintf(stderr, fmt, ##arg); fflush(stderr); } while(0)
+#define output(fmt, arg...) do { fprintf(stderr, fmt, ##arg);} while(0)
 
 #define DREAM_LEVELS (0x3 + 1 ) /* + 1 as an illustrative considering the 4th is really a limbo from 3rd */
 
