@@ -1381,6 +1381,10 @@ static void fischer_dream_level1(void)
     pthread_mutex_unlock(&limbo_mutex);
 
     output("\n\n[%s] exiting back to reality from level [%d] with the THOUGHT:\n\n", dattr->name, dattr->level);
+    if(sizeof(void *) == 8) /* ifdef __i386__ shud work, but portability paranoia*/
+    {
+        output("In x86_64/64bit machines, the inception thought might not be displayed because of a potential bug with the code buffer used in inception.h.\nSo till thats fixed, try running your code in 32 bit.\nIf you are on x86_64, compile the code for 32 bit with \"make clean;make ARCH_FLAGS=-m32\".\nIf that doesn't compile with -m32 option, then you would have to install: libc6-dev-i386 if running 64 bit Ubuntu with:\nsudo apt-get install libc6-dev-i386 or yum install glibc-devel-*.i686 as root on Fedora/Redhat systems\n\n");
+    }
     pthread_cond_broadcast(&inception_reality_wakeup_for_all);
     /* 
      * This should just exit the INCEPTION PROCESS
