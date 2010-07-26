@@ -3,7 +3,7 @@
 
 CC := gcc
 ARCH := $(shell uname -m)
-ifeq ($(ARCH), 'i686')
+ifeq ($(ARCH), i686)
 	ARCH_FLAGS := -m32 
 else 
 	ARCH_FLAGS := -m64
