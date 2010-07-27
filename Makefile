@@ -2,6 +2,7 @@
 ## the code buffer that morphs the thought is fixed for x86_64
 
 CC := gcc
+UNAME := $(shell uname)
 ARCH := $(shell uname -m | sed -e 's,i.86,i386,')
 ifeq ($(ARCH),i386)
 	ARCH_FLAGS := -m32 
@@ -11,7 +12,10 @@ endif
 CFLAGS := -g -Wall $(ARCH_FLAGS)
 SRC_FILES := $(wildcard *.c)
 OBJ_FILES := $(SRC_FILES:%.c=%.o)
-LDLIBS := -lpthread -lrt
+LDLIBS := -lpthread
+ifeq ("$(UNAME)", "Linux")
+	LDLIBS += -lrt
+endif
 TARGET := inception
 
 all: $(TARGET)
