@@ -2,8 +2,8 @@
 ## the code buffer that morphs the thought is fixed for x86_64
 
 CC := gcc
-ARCH := $(shell uname -m)
-ifeq ($(ARCH), i686)
+ARCH := $(shell uname -m | sed -e 's,i.86,i386,')
+ifeq ($(ARCH),i386)
 	ARCH_FLAGS := -m32 
 else 
 	ARCH_FLAGS := -m64

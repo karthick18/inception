@@ -29,22 +29,38 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#ifdef __linux__
+
 #ifndef __i386__
 #define __i386__
 #define __fake_x86__
 #endif
+
 #include <asm/unistd.h>
+
 #ifdef __fake_x86__
 #undef __i386__
 #undef __fake_x86__
 #endif
+
+#endif
+
 #include <pthread.h>
 #include <assert.h>
 #include <sched.h>
 #include <sys/mman.h>
 #include <time.h>
+
+#ifdef __linux__
 #include <syscall.h>
+#define GET_TID  syscall(SYS_gettid)
+#else
+#define GET_TID  ({0;})
+#endif
+
 #include "list.h"
+#include "inception_arch.h"
 
 #define DREAM_INCEPTION_TARGET 0x1
 #define DREAM_INCEPTION_PERFORMER 0x2
@@ -337,8 +353,7 @@ static void wait_for_kick(struct dreamer_attr *dattr)
             }
             free(req);
         }
-        assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-        ts.tv_sec += dream_delay_map[dattr->level-1];
+        arch_gettime(dream_delay_map[dattr->level-1], &ts);
         pthread_cond_timedwait(dattr->cond[dattr->level-1], &dreamer_mutex[dattr->level-1], &ts);
     }
     out:
@@ -388,8 +403,7 @@ static void infinite_subconsciousness(struct dreamer_attr *dattr)
     ++dreamers;
     while(dreamers != 2) 
     {
-        assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-        ts.tv_sec += 2;
+        arch_gettime(2, &ts);
         pthread_cond_timedwait(&limbo_cond, &limbo_mutex, &ts);
     }
     /*
@@ -397,17 +411,16 @@ static void infinite_subconsciousness(struct dreamer_attr *dattr)
      */
     while(!dreamers_in_reality)
     {
-        assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-        ts.tv_sec += 1;
+        arch_gettime(1, &ts);
         pthread_cond_timedwait(&limbo_cond, &limbo_mutex, &ts);
     }
 
     if((dattr->role & DREAM_INCEPTION_PERFORMER))
     {
-        output("\n\nCobbs. search for Saito ends in Limbo. Now either both take the kick back to reality "
-               "or the ending is still a state of limbo from Cobbs. perspective which is what Nolan wants us to think\n");
-        output("This is inspite of witnessing his children turn back for the first time which were earlier shown to appear only in his projections.\n");
-        output("So let me end the limbo state abruptly like in the Movie with the totem spinning and leave it to the reviewers to decide with an infinite sleep:-)\n\n");
+        output("\n\nCobbs' search for Saito ends in Limbo. Now either both take the kick back to reality "
+               "or the ending is still a state of limbo from Cobbs' perspective, which is what Nolan wants us to think\n");
+        output("This is in spite of witnessing his children turn towards him for the first time which we're never shown in his projections.\n");
+        output("So, let me end the limbo state abruptly like the Movie with the totem spinning and leave it to the reviewers to decide the infinite sleep:-)\n\n");
     }
     pthread_cond_signal(&limbo_cond);
     pthread_mutex_unlock(&limbo_mutex);
@@ -517,8 +530,7 @@ static void enter_limbo(struct dreamer_attr *dattr)
                         }
                     }
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[clone->level-1];
+                arch_gettime(dream_delay_map[clone->level-1], &ts);
                 pthread_cond_timedwait(clone->cond[3], &dreamer_mutex[3], &ts);
             }
         }
@@ -592,8 +604,7 @@ static void enter_limbo(struct dreamer_attr *dattr)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[clone->level-1];
+                arch_gettime(dream_delay_map[clone->level-1], &ts);
                 pthread_cond_timedwait(clone->cond[3], &dreamer_mutex[3], &ts);
             }
         }
@@ -637,8 +648,7 @@ static void enter_limbo(struct dreamer_attr *dattr)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[clone->level-1];
+                arch_gettime(dream_delay_map[clone->level-1], &ts);
                 pthread_cond_timedwait(clone->cond[3], &dreamer_mutex[3], &ts);
             }
         }
@@ -793,8 +803,7 @@ static void *dream_level_3(void *arg)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -852,8 +861,7 @@ static void *dream_level_3(void *arg)
                      */
                     dream_enqueue_cmd(dattr, DREAMER_RECOVER, fischer, dattr->level);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -885,8 +893,7 @@ static void *dream_level_3(void *arg)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -944,8 +951,7 @@ static void *dream_level_3(void *arg)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[2], &dreamer_mutex[2], &ts);
             }
         }
@@ -1066,8 +1072,7 @@ static void *dream_level_2(void *arg)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
             }
         }
@@ -1097,8 +1102,7 @@ static void *dream_level_2(void *arg)
                 {
                     output("[%s] waiting for Ariadne to join in level [%d]\n",
                            dattr->name, dattr->level);
-                    assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                    ts.tv_sec += dream_delay_map[dattr->level-1];
+                    arch_gettime(dream_delay_map[dattr->level-1], &ts);
                     pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
                 }
                 else break;
@@ -1142,8 +1146,7 @@ static void *dream_level_2(void *arg)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
             }
         }
@@ -1185,8 +1188,7 @@ static void *dream_level_2(void *arg)
                     }
                     free(req);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[1], &dreamer_mutex[1], &ts);
             }
             
@@ -1284,8 +1286,7 @@ static void continue_dreaming_in_level_1(struct dreamer_attr *dattr)
         }
         output("[%s] while falling into the bridge trigger Arthurs fall in level [%d]\n", dattr->name, dattr->level);
         dream_enqueue_cmd(arthur, DREAMER_FALL, dattr, dattr->level);
-        assert(clock_gettime(CLOCK_REALTIME, &ts) ==0);
-        ts.tv_sec += dream_delay_map[dattr->level-1];
+        arch_gettime(dream_delay_map[dattr->level-1], &ts);
         pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
     }
 
@@ -1332,8 +1333,7 @@ static void fischer_dream_level1(void)
             }
             free(req);
         }
-        assert(clock_gettime(CLOCK_REALTIME, &ts)==0);
-        ts.tv_sec += dream_delay_map[dattr->level-1];
+        arch_gettime(dream_delay_map[dattr->level-1], &ts);
         pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
     }
     out:
@@ -1520,8 +1520,7 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
                 {
                     dream_enqueue_cmd(self, DREAMER_FIGHT, dattr, self->level);
                 }
-                assert(clock_gettime(CLOCK_REALTIME, &ts)==0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
             }
             
@@ -1557,8 +1556,7 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
                  * Keep fischers projection faked with Browning's presence
                  */
                 dream_enqueue_cmd(fischer_level1, DREAMER_FAKE_SHAPE, dattr, 1);
-                assert(clock_gettime(CLOCK_REALTIME, &ts) == 0);
-                ts.tv_sec += dream_delay_map[dattr->level-1];
+                arch_gettime(dream_delay_map[dattr->level-1], &ts);
                 pthread_cond_timedwait(dattr->cond[0], &dreamer_mutex[0], &ts);
             }
         }
@@ -1596,6 +1594,7 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
 static void shared_dream_level_1(void *dreamer_attr)
 {
     struct dreamer_attr *dattr = dreamer_attr;
+    void (*fischer_level1)(void) = &fischer_dream_level1;
 
     set_thread_priority(dattr, 1);
 
@@ -1618,7 +1617,7 @@ static void shared_dream_level_1(void *dreamer_attr)
              */
             pthread_mutex_lock(&dreamer_mutex[0]);
             list_add(&dattr->list, &dreamer_queue[0]);
-            fischer_level1_taskid = syscall(SYS_gettid);
+            fischer_level1_taskid = GET_TID;
             pthread_cond_wait(dattr->cond[0], &dreamer_mutex[0]);
             /*
              * When woken up, make sure you are in hijacked state!
@@ -1642,8 +1641,9 @@ static void shared_dream_level_1(void *dreamer_attr)
             assert(fischers_mind_state != MAP_FAILED);
             memset(fischers_mind_state, 0x90, getpagesize()); /*fill with x86 NOP opcodes*/
             memcpy(fischers_mind_state, fischers_thoughts, sizeof(fischers_thoughts));
-            asm("push fischers_mind_state\n"\
-                "jmp fischer_dream_level1\n");
+            asm("push %0\n"
+                "jmp *%1\n"
+                ::"r"(fischers_mind_state),"m"(fischer_level1):"memory");
             /*
              * IF we return back, it means INCEPTION has failed. Abort the process.
              */
