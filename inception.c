@@ -1043,6 +1043,7 @@ static void *dream_level_2(void *arg)
         usleep(10000);
         pthread_mutex_lock(&dreamer_mutex[1]);
     }
+
     pthread_mutex_unlock(&dreamer_mutex[1]);
     switch((dattr->role & DREAM_ROLE_MASK))
     {
@@ -1052,8 +1053,10 @@ static void *dream_level_2(void *arg)
              * Wait for Ariadne and Fischer to join me. at this level after meeting with Arthur
              */
             struct dreamer_request *req;
+            struct dreamer_attr *eames;
             struct timespec ts = {0};
             int wait_for_dreamers = DREAM_WORLD_ARCHITECT | DREAM_INCEPTION_TARGET;
+            eames = dreamer_find(&dreamer_queue[1], "eames", DREAM_SHAPES_FAKER);
             pthread_mutex_lock(&dattr->mutex);
             while(wait_for_dreamers > 0)
             {
@@ -1076,10 +1079,11 @@ static void *dream_level_2(void *arg)
                 free(req);
             }
             /*
-             * Ariadne + Fischer has joined. Go to level 3. myself
+             * Ariadne + Fischer has joined. Go to level 3. myself. Take Eames into level 3
              */
             pthread_mutex_unlock(&dattr->mutex);
             dream_level_create(dattr->level + 1, dream_level_3, dattr);
+            dream_enqueue_cmd(eames, DREAMER_NEXT_LEVEL, dattr, eames->level);
             pthread_mutex_lock(&dattr->mutex);
             /*
              * Just do nothing and wait for kick back to previous level.
@@ -1272,34 +1276,57 @@ static void *dream_level_2(void *arg)
     case DREAM_SHAPES_FAKER: /*Eames*/
         {
             struct dreamer_attr *fischer = NULL;
+            struct dreamer_attr *saito = NULL;
             /*
              * Find fischer and fake Browning to manipulate him for the final inception.
              * by creating a doubt in his mind.
              */
             fischer = dreamer_find(&dreamer_queue[1], "fischer", DREAM_INCEPTION_TARGET);
+            saito = dreamer_find(&dreamer_queue[1], "saito", DREAM_OVERLOOKER);
             output("[%s] Faking Browning's projection to Fischer at level [%d]\n",
                    dattr->name, dattr->level);
             dream_enqueue_cmd(fischer, DREAMER_FAKE_SHAPE, dattr, dattr->level);
-            /*
-             * Follow cobb to level 3
-             */
-            output("[%s] following Cobb to level [%d]\n", dattr->name, dattr->level+1);
-            dream_level_create(dattr->level + 1, dream_level_3, dattr);
-            pthread_mutex_lock(&dattr->mutex);
-            wait_for_kick(dattr);
-        }
-        break;
 
-    case DREAM_OVERLOOKER: /*Saito*/
-        {
-            /*
-             * Follow Cobb to level 3. Also you are shot. in level 1
-             */
-            output("[%s] following Cobb to level [%d]\n", dattr->name, dattr->level+1);
-            dream_level_create(dattr->level + 1, dream_level_3, dattr);
-            pthread_mutex_lock(&dattr->mutex);
-            wait_for_kick(dattr);
+            /* fall through*/
+        case DREAM_OVERLOOKER: /*Saito*/
+            {
+                struct dreamer_request *req = NULL;
+                struct timespec ts = {0};
+                pthread_mutex_lock(&dattr->mutex);
+                for(;;)
+                {
+                    while( (req = dream_dequeue_cmd_locked(dattr) ) )
+                    {
+                        if(req->cmd == DREAMER_NEXT_LEVEL)
+                        {
+                            struct dreamer_attr *src = (struct dreamer_attr*)req->arg;
+                            output("[%s] following [%s] to level [%d]\n", 
+                                   dattr->name, src->name, dattr->level+1);
+                            pthread_mutex_unlock(&dattr->mutex);
+                            if( ( src->role & DREAM_INCEPTION_PERFORMER) )
+                            {
+                                /*
+                                 * Eames takes Saito to the next level.
+                                 */
+                                dream_enqueue_cmd(saito, DREAMER_NEXT_LEVEL, dattr, saito->level);
+                            }
+                            dream_level_create(dattr->level+1, dream_level_3, dattr);
+                            pthread_mutex_lock(&dattr->mutex);
+                        }
+                        else if(req->cmd == DREAMER_KICK_BACK)
+                        {
+                            free(req);
+                            output("[%s] got Kick at level [%d]\n", dattr->name, dattr->level);
+                            goto out_unlock;
+                        }
+                        free(req);
+                    }
+                    arch_gettime(dream_delay_map[dattr->level-1], &ts);
+                    pthread_cond_timedwait(dattr->cond[dattr->level-1], &dattr->mutex, &ts);
+                }
+            }
         }
+
         break;
 
     default:
