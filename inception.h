@@ -32,7 +32,7 @@ static unsigned char inception_thoughts[] = {
         0x75,	0x61,	0x6c,	0x69,	0x74,	0x79,	0x0a,
 };
 
-#else /* __x86_64__ */
+#elif defined(__x86_64__) /* __x86_64__ */
 
 /*
  * For 64 bit, find the inception buffer with the assembly equivalent using:
@@ -70,6 +70,35 @@ static unsigned char inception_thoughts[] = {
         0x75	,0x61	,0x6c	,0x69	,0x74	,0x79	,0x0a,
 };
 
+#elif defined(__arm__)
+
+/*
+ * Here is the assembly equilavent for arm.
+    __asm__ __volatile__("mov r0, #1\n"
+                         "add r1, pc, #12\n"
+                         "mov r2, #4\n"
+                         "swi 0x900004\n"
+                         "mov r0, #1\n"
+                         "swi 0x900001\n"
+                         ".ascii");
+ */
+static unsigned char inception_thoughts[] = {
+     0x01,0x00,0xa0,0xe3,0x0c,0x10,0x8f,0xe2
+    ,0x37,0x20,0xa0,0xe3,0x4,0x00,0x90,0xef
+    ,0x00,0x00,0xa0,0xe3,0x01,0x00,0x90,0xef
+    ,0x52,0x65,0x63,0x6f,0x6e,0x63,0x69,0x6c,0x65,0x20
+    ,0x77,0x69,0x74,0x68,0x20,0x6d,0x79,0x20
+    ,0x66,0x61,0x74,0x68,0x65,0x72,0x20,0x61
+    ,0x6e,0x64,0x20,0x68,0x61,0x76,0x65,0x20
+    ,0x6d,0x79,0x20,0x6f,0x77,0x6e,0x20,0x69
+    ,0x6e,0x64,0x69,0x76,0x69,0x64,0x75,0x61
+    ,0x6c,0x69,0x74,0x79,0x0a,
+};
+
+#else
+
+#error "Unsupported linux architecture. Force compilation errors"
+
 #endif
 
 /*
@@ -78,10 +107,36 @@ static unsigned char inception_thoughts[] = {
  * Fischers dream
  */
 
+#if defined(__i386__) || defined(__x86_64__)
+
 static unsigned char fischers_thoughts[] = { [ 0 ... sizeof(inception_thoughts)-1] = 0x90,
                                              0xb8, 0x1, 0x00, 0x00,
                                              0x00, 0xbb, 0x00, 0x00, 0x00, 0x00,0xcd, 0x80,
 };
+
+static __inline__ void nop_fill(char *map, int len)
+{
+    memset(map, 0x90, len); /*fill it with the x86 nop opcode*/
+}
+
+#elif defined(__arm__)
+
+static unsigned char fischers_thoughts[] = { 0x00, 0x00, 0xa0, 0xe3, 0x01, 0x00, 0x90, 0xef };
+
+static __inline__ void nop_fill(char *map, int len)
+{
+#define NOP_WORD_FILL 0xe1a01001 /* mov r1, r1 or even a zero set with mov r0, r0 */
+    register int i;
+    for(i = 0; i < len >> 2; ++i)
+        ((int*)map)[i] = NOP_WORD_FILL;
+#undef NOP_WORD_FILL
+}
+
+#else
+
+#error "Unsupported linux arch. Force compilation error"
+
+#endif
 
 #elif defined(__APPLE__)
 
@@ -105,6 +160,11 @@ static unsigned char fischers_thoughts[] = { [ 0 ... sizeof(inception_thoughts)-
                                                0xbb, 0x00, 0x00, 0x00, 0x00, 0x53, 0xb8, 0x01
                                                ,0x00, 0x00, 0x00, 0x50, 0xcd, 0x80,
 };
+
+static __inline__ void nop_fill(char *map, int len)
+{
+    memset(map, 0x90, len); /*fill it with the x86 nop opcode*/
+}
 
 #else
 

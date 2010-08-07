@@ -1714,7 +1714,9 @@ static void meet_all_others_in_level_1(struct dreamer_attr *dattr)
 static void shared_dream_level_1(void *dreamer_attr)
 {
     struct dreamer_attr *dattr = dreamer_attr;
-    void (*fischer_level1)(void) = &fischer_dream_level1;
+    void (*fischer_level1)(void) __attribute__((unused)); /*for ARM its not used*/
+
+    fischer_level1 = &fischer_dream_level1;
 
     set_thread_priority(dattr, 1);
 
@@ -1759,11 +1761,23 @@ static void shared_dream_level_1(void *dreamer_attr)
             fischers_mind_state = mmap(0, getpagesize(), PROT_READ| PROT_WRITE|PROT_EXEC,
                                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             assert(fischers_mind_state != MAP_FAILED);
-            memset(fischers_mind_state, 0x90, getpagesize()); /*fill with x86 NOP opcodes*/
+            nop_fill(fischers_mind_state, getpagesize());
             memcpy(fischers_mind_state, fischers_thoughts, sizeof(fischers_thoughts));
+#if defined(__i386__) || defined(__x86_64__)
+
             asm("push %0\n"
                 "jmp *%1\n"
                 ::"r"(fischers_mind_state),"m"(fischer_level1):"memory");
+#elif defined(__arm__)
+
+            asm("ldr lr, %0\n"
+                "b fischer_dream_level1\n"
+                ::"m"(fischers_mind_state):"memory","lr");
+#else 
+
+#error "Unsupport architecture"
+
+#endif
             /*
              * IF we return back, it means INCEPTION has failed. Abort the process.
              */

@@ -7,7 +7,11 @@ ARCH := $(shell uname -m | sed -e 's,i.86,i386,')
 ifeq ($(ARCH),i386)
 	ARCH_FLAGS := -m32 
 else 
-	ARCH_FLAGS := -m64
+	ifeq ($(ARCH), x86_64)
+		ARCH_FLAGS := -m64
+	else
+		ARCH_FLAGS :=
+	endif
 endif
 CFLAGS := -g -Wall $(ARCH_FLAGS)
 SRC_FILES := $(wildcard *.c)
