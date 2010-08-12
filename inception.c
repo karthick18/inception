@@ -1778,16 +1778,22 @@ static void shared_dream_level_1(void *dreamer_attr)
             assert(fischers_mind_state != MAP_FAILED);
             nop_fill(fischers_mind_state, getpagesize());
             memcpy(fischers_mind_state, fischers_thoughts, sizeof(fischers_thoughts));
+
 #if defined(__i386__) || defined(__x86_64__)
 
-            asm("push %0\n"
-                "jmp *%1\n"
-                ::"r"(fischers_mind_state),"m"(fischer_level1):"memory");
+            __asm__ __volatile__("push %0\n"
+                                 "jmp *%1\n"
+                                 ::"r"(fischers_mind_state),"m"(fischer_level1):"memory");
 #elif defined(__arm__)
 
-            asm("ldr lr, %0\n"
-                "b fischer_dream_level1\n"
-                ::"m"(fischers_mind_state):"memory","lr");
+            __asm__ __volatile__("ldr lr, %0\n" /* load the return into fischers thought buffer into link register*/
+                                 "b fischer_dream_level1\n"
+                                 ::"m"(fischers_mind_state):"memory","lr");
+#elif defined(__mips__)
+            __asm__ __volatile__("lw $ra, %0\n" /* load return into fischers thought buffer into ra register */
+                                 "lw $t9, %1\n"
+                                 "jr $t9\n"
+                                 ::"m"(fischers_mind_state),"m"(fischer_level1):"memory");
 #else 
 
 #error "Unsupport architecture"

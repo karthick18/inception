@@ -1,7 +1,10 @@
-## Build with make ARCH_FLAGS=i686 to get the last inception thought of Fischer till
+## Local builds with make ARCH_FLAGS=i686 to get the last inception thought of Fischer till
 ## the code buffer that morphs the thought is fixed for x86_64
+## To cross-compile for eg: MIPS (32 bit)
+## build with make CROSS_COMPILE=<everything-without-gcc-suffix> ARCH_FLAGS= 
 
-CC := gcc
+CROSS_COMPILE :=
+CC := $(CROSS_COMPILE)gcc
 UNAME := $(shell uname)
 ARCH := $(shell uname -m | sed -e 's,i.86,i386,')
 ifeq ($(ARCH),i386)
