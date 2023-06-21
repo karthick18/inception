@@ -3,7 +3,7 @@ My tribute to Nolan in "C" Language and a bit of assembly (x86) as the inception
 
 In order to compile the code, just type: `make`
 And run the code by typing: `./inception` ,
-to see the sequencing in the movie and have the code exit with Fischers Inception thought planted by the Inception team!
+to see the sequencing in the movie and have the code exit with Fischer's Inception thought planted by the Inception team!
 
 - [Karthick] [email]
 
